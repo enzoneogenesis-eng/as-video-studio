@@ -20,6 +20,7 @@ const generationRoutes = require('./routes/generations');
 const webhookRoutes = require('./routes/webhooks');
 const internalRoutes = require('./routes/internal');
 const accountRoutes = require('./routes/account');
+const checkoutRoutes = require('./routes/checkout');
 const { requireAuth, redirectIfAuthenticated } = require('./lib/middleware');
 const recovery = require('./lib/recovery');
 
@@ -100,6 +101,7 @@ app.use('/api/generations', generationRoutes);
 app.use('/api/webhooks', webhookRoutes);
 app.use('/api/internal', internalRoutes);
 app.use('/api/account', accountRoutes);
+app.use('/api/checkout', checkoutRoutes);
 
 app.get('/api/health', (req, res) => {
   let users = null;
