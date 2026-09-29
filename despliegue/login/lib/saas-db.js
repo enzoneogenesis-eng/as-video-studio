@@ -46,6 +46,12 @@ CREATE TABLE IF NOT EXISTS payments (
   currency TEXT NOT NULL DEFAULT 'USD', status TEXT NOT NULL,
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
+CREATE TABLE IF NOT EXISTS usage_imports (
+  source TEXT NOT NULL,
+  source_event_id TEXT NOT NULL,
+  imported_at TEXT NOT NULL DEFAULT (datetime('now')),
+  PRIMARY KEY(source,source_event_id)
+);
 CREATE TABLE IF NOT EXISTS ai_usage (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
@@ -89,6 +95,8 @@ const q = {
   reservationByKey: db.prepare('SELECT * FROM credit_reservations WHERE reservation_key=?'),
   addReservation: db.prepare('INSERT INTO credit_reservations(reservation_key,user_id,credits,project_id,operation) VALUES(?,?,?,?,?)'),
   settleReservation: db.prepare("UPDATE credit_reservations SET status=?,usage_id=?,settled_at=datetime('now') WHERE id=? AND status='reserved'"),
+  usageImport: db.prepare('SELECT * FROM usage_imports WHERE source=? AND source_event_id=?'),
+  addUsageImport: db.prepare('INSERT INTO usage_imports(source,source_event_id) VALUES(?,?)'),
   paymentEvent: db.prepare('SELECT * FROM payment_events WHERE provider=? AND event_id=?'),
   addPaymentEvent: db.prepare('INSERT INTO payment_events(provider,event_id,event_type,payload_hash) VALUES(?,?,?,?)'),
   paymentByRef: db.prepare('SELECT * FROM payments WHERE provider=? AND provider_ref=?'),
@@ -122,6 +130,12 @@ const txSettle=db.transaction((key,usage)=>{
   if(!ok) q.addCredit.run(r.user_id,r.credits,'refund','job',key,'Devolucion automatica por generacion fallida');
   return q.reservationByKey.get(key);
 });
+const txImportUsage=db.transaction((source,eventId,usage)=>{
+  if(q.usageImport.get(source,eventId)) return {duplicate:true};
+  q.addUsageImport.run(source,eventId);
+  const info=q.addUsage.run({...usage,units_json:JSON.stringify(usage.units||{}),cost_microusd:Number(usage.cost_microusd||0),credits_charged:Number(usage.credits_charged||0),status:usage.status||'succeeded',error_code:usage.error_code||null});
+  return {duplicate:false,usageId:Number(info.lastInsertRowid)};
+});
 const txPayment=db.transaction((p)=>{
   const seen=q.paymentEvent.get(p.provider,p.event_id); if(seen) return {duplicate:true};
   q.addPaymentEvent.run(p.provider,p.event_id,p.event_type||null,p.payload_hash||null);
@@ -132,4 +146,4 @@ const txPayment=db.transaction((p)=>{
   if(p.status==='paid'&&credits>0) q.addCredit.run(p.user_id,credits,'purchase','payment',String(info.lastInsertRowid),'Compra '+p.plan_code);
   return {duplicate:false,paymentId:Number(info.lastInsertRowid),credits};
 });
-module.exports={q,txCharge,txReserve,txSettle,txPayment};
+module.exports={q,txCharge,txReserve,txSettle,txPayment,txImportUsage};
