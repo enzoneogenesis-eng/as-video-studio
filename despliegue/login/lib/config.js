@@ -53,6 +53,7 @@ const config = {
 
   stripeWebhookSecret: String(process.env.STRIPE_WEBHOOK_SECRET || '').trim(),
   mercadoPagoWebhookSecret: String(process.env.MERCADOPAGO_WEBHOOK_SECRET || '').trim(),
+  internalCostSecret: String(process.env.INTERNAL_COST_SECRET || '').trim(),
 };
 
 if (!config.sessionSecret || config.sessionSecret.length < 32) {
