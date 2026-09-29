@@ -20,6 +20,7 @@ const generationRoutes = require('./routes/generations');
 const webhookRoutes = require('./routes/webhooks');
 const internalRoutes = require('./routes/internal');
 const { requireAuth, redirectIfAuthenticated } = require('./lib/middleware');
+const recovery = require('./lib/recovery');
 
 const app = express();
 const PUBLIC_DIR = path.join(__dirname, 'public');
@@ -161,6 +162,7 @@ app.use((err, req, res, _next) => {
 });
 
 // ---------------------------------------------------------------- arranque
+recovery.start();
 const server = app.listen(config.port, config.host, () => {
   const n = (() => { try { return stmt.countUsers.get().n; } catch { return '?'; } })();
   console.log(`[studio-videos-ia] escuchando en http://${config.host}:${config.port}`);
@@ -173,6 +175,7 @@ const server = app.listen(config.port, config.host, () => {
 for (const signal of ['SIGTERM', 'SIGINT']) {
   process.on(signal, () => {
     console.log(`[studio-videos-ia] ${signal} recibido, cerrando...`);
+    recovery.stop();
     server.close(() => process.exit(0));
     setTimeout(() => process.exit(0), 8000).unref();
   });
