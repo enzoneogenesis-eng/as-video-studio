@@ -14,6 +14,8 @@ const SqliteStore = require('better-sqlite3-session-store')(session);
 const config = require('./lib/config');
 const { stmt } = require('./lib/db');
 const authRoutes = require('./routes/auth');
+const adminRoutes = require('./routes/admin');
+const billingRoutes = require('./routes/billing');
 const { requireAuth, redirectIfAuthenticated } = require('./lib/middleware');
 
 const app = express();
@@ -87,6 +89,8 @@ app.use('/js',  express.static(path.join(PUBLIC_DIR, 'js'),  STATIC_REVALIDATE))
 
 // ---------------------------------------------------------------- API
 app.use('/api', authRoutes);
+app.use('/api/admin', adminRoutes);
+app.use('/api/billing', billingRoutes);
 
 app.get('/api/health', (req, res) => {
   let users = null;
