@@ -14,7 +14,16 @@ const SqliteStore = require('better-sqlite3-session-store')(session);
 const config = require('./lib/config');
 const { stmt } = require('./lib/db');
 const authRoutes = require('./routes/auth');
+const adminRoutes = require('./routes/admin');
+const billingRoutes = require('./routes/billing');
+const generationRoutes = require('./routes/generations');
+const webhookRoutes = require('./routes/webhooks');
+const internalRoutes = require('./routes/internal');
+const accountRoutes = require('./routes/account');
+const checkoutRoutes = require('./routes/checkout');
+const creatorRoutes = require('./routes/creator');
 const { requireAuth, redirectIfAuthenticated } = require('./lib/middleware');
+const recovery = require('./lib/recovery');
 
 const app = express();
 const PUBLIC_DIR = path.join(__dirname, 'public');
@@ -87,6 +96,14 @@ app.use('/js',  express.static(path.join(PUBLIC_DIR, 'js'),  STATIC_REVALIDATE))
 
 // ---------------------------------------------------------------- API
 app.use('/api', authRoutes);
+app.use('/api/admin', adminRoutes);
+app.use('/api/billing', billingRoutes);
+app.use('/api/generations', generationRoutes);
+app.use('/api/webhooks', webhookRoutes);
+app.use('/api/internal', internalRoutes);
+app.use('/api/account', accountRoutes);
+app.use('/api/checkout', checkoutRoutes);
+app.use('/api/creator', creatorRoutes);
 
 app.get('/api/health', (req, res) => {
   let users = null;
@@ -127,6 +144,24 @@ app.get('/studio', requireAuth, (req, res) => {
   res.sendFile(path.join(PUBLIC_DIR, 'studio.html'));
 });
 
+app.get('/storyboard', requireAuth, (req, res) => {
+  res.sendFile(path.join(PUBLIC_DIR, 'storyboard.html'));
+});
+
+app.get('/create', requireAuth, (req, res) => {
+  res.sendFile(path.join(PUBLIC_DIR, 'create.html'));
+});
+
+app.get('/account', requireAuth, (req, res) => {
+  res.sendFile(path.join(PUBLIC_DIR, 'account.html'));
+});
+
+app.get('/admin', requireAuth, (req, res) => {
+  const user = stmt.findById.get(req.session.userId);
+  if (!user || user.role !== 'admin') return res.status(403).send('Solo administradores.');
+  res.sendFile(path.join(PUBLIC_DIR, 'admin.html'));
+});
+
 // ---------------------------------------------------------------- errores
 app.use((req, res) => {
   if (req.path.startsWith('/api/')) {
@@ -145,6 +180,7 @@ app.use((err, req, res, _next) => {
 });
 
 // ---------------------------------------------------------------- arranque
+recovery.start();
 const server = app.listen(config.port, config.host, () => {
   const n = (() => { try { return stmt.countUsers.get().n; } catch { return '?'; } })();
   console.log(`[studio-videos-ia] escuchando en http://${config.host}:${config.port}`);
@@ -157,6 +193,7 @@ const server = app.listen(config.port, config.host, () => {
 for (const signal of ['SIGTERM', 'SIGINT']) {
   process.on(signal, () => {
     console.log(`[studio-videos-ia] ${signal} recibido, cerrando...`);
+    recovery.stop();
     server.close(() => process.exit(0));
     setTimeout(() => process.exit(0), 8000).unref();
   });

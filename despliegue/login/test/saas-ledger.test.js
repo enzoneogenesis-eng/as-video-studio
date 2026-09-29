@@ -1,0 +1,12 @@
+'use strict';
+const test=require('node:test');const assert=require('node:assert/strict');const fs=require('fs');const os=require('os');const path=require('path');
+const tmp=fs.mkdtempSync(path.join(os.tmpdir(),'studio-saas-'));process.env.DATA_DIR=tmp;process.env.SESSION_SECRET='test-secret-that-is-long-enough-for-local-tests';
+const {db}=require('../lib/db');const {q,txReserve,txSettle,txPayment,txRefundStale}=require('../lib/saas-db');
+const user=db.prepare("INSERT INTO users(username,password_hash,role) VALUES('test','x','user')").run().lastInsertRowid;
+q.addCredit.run(user,100,'seed','test','1','test');
+test('reserva idempotente no cobra dos veces',()=>{txReserve(user,'job-1',20,'p1','image');txReserve(user,'job-1',20,'p1','image');assert.equal(q.balance.get(user).balance,80)});
+test('fallo devuelve creditos una sola vez',()=>{txSettle('job-1',{provider:'test',model:'x',operation:'image',units:{},cost_microusd:1,status:'failed'});txSettle('job-1',{provider:'test',model:'x',operation:'image',units:{},cost_microusd:1,status:'failed'});assert.equal(q.balance.get(user).balance,100)});
+test('pago repetido acredita una sola vez',()=>{const p={provider:'stripe',event_id:'evt1',event_type:'paid',provider_ref:'pay1',user_id:user,plan_code:'starter',amount_microusd:19000000,fee_microusd:0,currency:'USD',status:'paid'};txPayment(p);txPayment(p);assert.equal(q.balance.get(user).balance,200)});
+test('saldo insuficiente bloquea reserva',()=>{assert.throws(()=>txReserve(user,'huge',99999,'p','video'),/Creditos insuficientes/)});
+test('recovery devuelve reserva expirada',()=>{txReserve(user,'stale',10,'p','video');db.prepare("UPDATE credit_reservations SET created_at=datetime('now','-3 hours') WHERE reservation_key='stale'").run();assert.equal(txRefundStale(120),1);assert.equal(q.balance.get(user).balance,200)});
+test.after(()=>{db.close();fs.rmSync(tmp,{recursive:true,force:true})});

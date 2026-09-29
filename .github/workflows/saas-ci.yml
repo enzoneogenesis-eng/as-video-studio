@@ -1,0 +1,33 @@
+name: SaaS CI
+on:
+  push:
+    branches: [saas-mvp]
+  pull_request:
+    branches: [main]
+jobs:
+  test-login-saas:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: despliegue/login
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm install --no-audit --no-fund
+      - run: npm test
+      - run: node --check server.js
+      - run: node --check routes/admin.js
+      - run: node --check routes/billing.js
+      - run: node --check routes/generations.js
+      - run: node --check routes/webhooks.js
+      - run: node --check routes/internal.js
+  python-syntax:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m py_compile nucleo/coste.py nucleo/saas_coste.py
