@@ -144,6 +144,10 @@ app.get('/studio', requireAuth, (req, res) => {
   res.sendFile(path.join(PUBLIC_DIR, 'studio.html'));
 });
 
+app.get('/storyboard', requireAuth, (req, res) => {
+  res.sendFile(path.join(PUBLIC_DIR, 'storyboard.html'));
+});
+
 app.get('/create', requireAuth, (req, res) => {
   res.sendFile(path.join(PUBLIC_DIR, 'create.html'));
 });
