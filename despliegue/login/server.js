@@ -16,6 +16,7 @@ const { stmt } = require('./lib/db');
 const authRoutes = require('./routes/auth');
 const adminRoutes = require('./routes/admin');
 const billingRoutes = require('./routes/billing');
+const generationRoutes = require('./routes/generations');
 const { requireAuth, redirectIfAuthenticated } = require('./lib/middleware');
 
 const app = express();
@@ -91,6 +92,7 @@ app.use('/js',  express.static(path.join(PUBLIC_DIR, 'js'),  STATIC_REVALIDATE))
 app.use('/api', authRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/billing', billingRoutes);
+app.use('/api/generations', generationRoutes);
 
 app.get('/api/health', (req, res) => {
   let users = null;
