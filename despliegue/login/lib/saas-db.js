@@ -7,6 +7,23 @@
 const { db } = require('./db');
 
 db.exec(`
+CREATE TABLE IF NOT EXISTS video_projects (
+  id TEXT PRIMARY KEY,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  title TEXT NOT NULL, idea TEXT NOT NULL, style TEXT NOT NULL, mode TEXT NOT NULL,
+  target_minutes INTEGER NOT NULL, scene_seconds INTEGER NOT NULL DEFAULT 6,
+  estimated_credits INTEGER NOT NULL DEFAULT 0, status TEXT NOT NULL DEFAULT 'storyboard',
+  created_at TEXT NOT NULL DEFAULT (datetime('now')), updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_video_projects_user ON video_projects(user_id,created_at DESC);
+CREATE TABLE IF NOT EXISTS video_scenes (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  project_id TEXT NOT NULL REFERENCES video_projects(id) ON DELETE CASCADE,
+  scene_no INTEGER NOT NULL, kind TEXT NOT NULL, duration_seconds INTEGER NOT NULL,
+  narration TEXT, visual_prompt TEXT, status TEXT NOT NULL DEFAULT 'planned',
+  asset_url TEXT, credits_used INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')), UNIQUE(project_id,scene_no)
+);
 CREATE TABLE IF NOT EXISTS checkout_sessions (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   checkout_key TEXT NOT NULL UNIQUE,
