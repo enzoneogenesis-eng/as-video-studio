@@ -48,6 +48,18 @@ CREATE TABLE IF NOT EXISTS ai_usage (
 );
 CREATE INDEX IF NOT EXISTS idx_ai_usage_user ON ai_usage(user_id,created_at);
 CREATE INDEX IF NOT EXISTS idx_ai_usage_project ON ai_usage(project_id,created_at);
+CREATE TABLE IF NOT EXISTS credit_reservations (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  reservation_key TEXT NOT NULL UNIQUE,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  credits INTEGER NOT NULL CHECK(credits > 0),
+  project_id TEXT, operation TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'reserved',
+  usage_id INTEGER REFERENCES ai_usage(id),
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  settled_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_reservation_user ON credit_reservations(user_id,status);
 CREATE TABLE IF NOT EXISTS admin_audit (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   actor_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
@@ -64,6 +76,9 @@ const q = {
   addCredit: db.prepare('INSERT INTO credit_ledger(user_id,delta,kind,reference_type,reference_id,note) VALUES(?,?,?,?,?,?)'),
   addUsage: db.prepare(`INSERT INTO ai_usage(user_id,project_id,job_id,provider,model,operation,units_json,cost_microusd,credits_charged,status,error_code)
     VALUES(@user_id,@project_id,@job_id,@provider,@model,@operation,@units_json,@cost_microusd,@credits_charged,@status,@error_code)`),
+  reservationByKey: db.prepare('SELECT * FROM credit_reservations WHERE reservation_key=?'),
+  addReservation: db.prepare('INSERT INTO credit_reservations(reservation_key,user_id,credits,project_id,operation) VALUES(?,?,?,?,?)'),
+  settleReservation: db.prepare("UPDATE credit_reservations SET status=?,usage_id=?,settled_at=datetime('now') WHERE id=? AND status='reserved'"),
   audit: db.prepare('INSERT INTO admin_audit(actor_user_id,action,target_type,target_id,detail_json) VALUES(?,?,?,?,?)'),
 };
 const txCharge = db.transaction((userId, usage) => {
@@ -74,4 +89,22 @@ const txCharge = db.transaction((userId, usage) => {
   if (credits) q.addCredit.run(userId,-credits,'ai_usage','ai_usage',String(info.lastInsertRowid),usage.operation);
   return {usageId:Number(info.lastInsertRowid),balance:balance-credits};
 });
-module.exports={q,txCharge};
+const txReserve=db.transaction((userId,key,credits,projectId,operation)=>{
+  const existing=q.reservationByKey.get(key); if(existing) return existing;
+  const balance=q.balance.get(userId).balance; credits=Number(credits);
+  if(!Number.isInteger(credits)||credits<=0) throw new Error('Reserva invalida');
+  if(credits>balance){const e=new Error('Creditos insuficientes');e.code='INSUFFICIENT_CREDITS';throw e;}
+  q.addCredit.run(userId,-credits,'reservation','job',key,operation);
+  q.addReservation.run(key,userId,credits,projectId||null,operation);
+  return q.reservationByKey.get(key);
+});
+const txSettle=db.transaction((key,usage)=>{
+  const r=q.reservationByKey.get(key); if(!r) throw new Error('Reserva no encontrada');
+  if(r.status!=='reserved') return r;
+  const ok=usage.status==='succeeded';
+  const info=q.addUsage.run({...usage,user_id:r.user_id,project_id:usage.project_id||r.project_id,units_json:JSON.stringify(usage.units||{}),cost_microusd:Number(usage.cost_microusd||0),credits_charged:ok?r.credits:0,status:usage.status,error_code:usage.error_code||null});
+  q.settleReservation.run(ok?'charged':'refunded',Number(info.lastInsertRowid),r.id);
+  if(!ok) q.addCredit.run(r.user_id,r.credits,'refund','job',key,'Devolucion automatica por generacion fallida');
+  return q.reservationByKey.get(key);
+});
+module.exports={q,txCharge,txReserve,txSettle};
