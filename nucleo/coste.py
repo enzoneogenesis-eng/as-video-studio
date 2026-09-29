@@ -279,6 +279,13 @@ class Medidor:
             global_registro["proyecto"] = self.proyecto.id
             global_registro["raiz"] = self.proyecto.raiz
             _linea(self.ruta_global, global_registro)
+        # Replica opcional al ledger SaaS. El fichero local sigue siendo la
+        # fuente operativa: una caida del panel nunca rompe una generacion.
+        try:
+            from .saas_coste import enviar_coste
+            enviar_coste(registro, self.proyecto.id)
+        except Exception:
+            pass
         return registro
 
     def _siguiente_id(self):
