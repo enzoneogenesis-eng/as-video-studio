@@ -50,6 +50,9 @@ const config = {
   // desde la consola web de ese panel. Vacio, la pantalla enlaza al listado de
   // VPS y el resto de las instrucciones vale igual.
   hostingerVpsId: String(process.env.HOSTINGER_VPS_ID || '').trim(),
+
+  stripeWebhookSecret: String(process.env.STRIPE_WEBHOOK_SECRET || '').trim(),
+  mercadoPagoWebhookSecret: String(process.env.MERCADOPAGO_WEBHOOK_SECRET || '').trim(),
 };
 
 if (!config.sessionSecret || config.sessionSecret.length < 32) {
