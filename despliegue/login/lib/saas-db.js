@@ -7,6 +7,17 @@
 const { db } = require('./db');
 
 db.exec(`
+CREATE TABLE IF NOT EXISTS checkout_sessions (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  checkout_key TEXT NOT NULL UNIQUE,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  plan_code TEXT NOT NULL,
+  provider TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'pending',
+  provider_ref TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  completed_at TEXT
+);
 CREATE TABLE IF NOT EXISTS plans (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   code TEXT NOT NULL UNIQUE, name TEXT NOT NULL,
@@ -93,6 +104,8 @@ INSERT OR IGNORE INTO plans(code,name,price_microusd,credits) VALUES
 `);
 
 const q = {
+  checkoutByKey: db.prepare('SELECT * FROM checkout_sessions WHERE checkout_key=?'),
+  addCheckout: db.prepare('INSERT INTO checkout_sessions(checkout_key,user_id,plan_code,provider) VALUES(?,?,?,?)'),
   balance: db.prepare('SELECT COALESCE(SUM(delta),0) balance FROM credit_ledger WHERE user_id=?'),
   ledger: db.prepare('SELECT * FROM credit_ledger WHERE user_id=? ORDER BY id DESC LIMIT ?'),
   addCredit: db.prepare('INSERT INTO credit_ledger(user_id,delta,kind,reference_type,reference_id,note) VALUES(?,?,?,?,?,?)'),
@@ -112,6 +125,12 @@ const q = {
   staleReservations: db.prepare("SELECT * FROM credit_reservations WHERE status='reserved' AND created_at < datetime('now', ?)"),
   audit: db.prepare('INSERT INTO admin_audit(actor_user_id,action,target_type,target_id,detail_json) VALUES(?,?,?,?,?)'),
 };
+const txCheckout=db.transaction((userId,key,planCode,provider)=>{
+  const old=q.checkoutByKey.get(key);if(old)return old;
+  if(!q.planByCode.get(planCode))throw new Error('Plan desconocido');
+  q.addCheckout.run(key,userId,planCode,provider);
+  return q.checkoutByKey.get(key);
+});
 const txCharge = db.transaction((userId, usage) => {
   const balance = q.balance.get(userId).balance;
   const credits = Number(usage.credits_charged || 0);
@@ -164,4 +183,4 @@ const txPayment=db.transaction((p)=>{
   if(p.status==='paid'&&credits>0) q.addCredit.run(p.user_id,credits,'purchase','payment',String(info.lastInsertRowid),'Compra '+p.plan_code);
   return {duplicate:false,paymentId:Number(info.lastInsertRowid),credits};
 });
-module.exports={q,txCharge,txReserve,txSettle,txPayment,txImportUsage,txRefundStale};
+module.exports={q,txCheckout,txCharge,txReserve,txSettle,txPayment,txImportUsage,txRefundStale};
