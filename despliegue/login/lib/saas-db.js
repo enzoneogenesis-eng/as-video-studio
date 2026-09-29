@@ -76,6 +76,12 @@ CREATE TABLE IF NOT EXISTS credit_reservations (
   settled_at TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_reservation_user ON credit_reservations(user_id,status);
+CREATE TABLE IF NOT EXISTS system_events (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  level TEXT NOT NULL, kind TEXT NOT NULL, message TEXT NOT NULL,
+  detail_json TEXT, created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_system_events_created ON system_events(created_at DESC);
 CREATE TABLE IF NOT EXISTS admin_audit (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   actor_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
@@ -102,6 +108,8 @@ const q = {
   paymentByRef: db.prepare('SELECT * FROM payments WHERE provider=? AND provider_ref=?'),
   addPayment: db.prepare('INSERT INTO payments(user_id,provider,provider_ref,plan_code,credits_granted,amount_microusd,fee_microusd,currency,status) VALUES(?,?,?,?,?,?,?,?,?)'),
   planByCode: db.prepare('SELECT * FROM plans WHERE code=? AND active=1'),
+  systemEvent: db.prepare('INSERT INTO system_events(level,kind,message,detail_json) VALUES(?,?,?,?)'),
+  staleReservations: db.prepare("SELECT * FROM credit_reservations WHERE status='reserved' AND created_at < datetime('now', ?)"),
   audit: db.prepare('INSERT INTO admin_audit(actor_user_id,action,target_type,target_id,detail_json) VALUES(?,?,?,?,?)'),
 };
 const txCharge = db.transaction((userId, usage) => {
@@ -130,6 +138,16 @@ const txSettle=db.transaction((key,usage)=>{
   if(!ok) q.addCredit.run(r.user_id,r.credits,'refund','job',key,'Devolucion automatica por generacion fallida');
   return q.reservationByKey.get(key);
 });
+const txRefundStale=db.transaction((minutes=60)=>{
+  const modifier='-'+Math.max(5,Number(minutes)||60)+' minutes';
+  const rows=q.staleReservations.all(modifier); let refunded=0;
+  for(const r of rows){
+    const changed=q.settleReservation.run('refunded',null,r.id);
+    if(changed.changes){q.addCredit.run(r.user_id,r.credits,'refund','job',r.reservation_key,'Reserva expirada: devolucion automatica');refunded++;}
+  }
+  if(refunded) q.systemEvent.run('warning','stale_reservations','Reservas expiradas devueltas',JSON.stringify({refunded,minutes}));
+  return refunded;
+});
 const txImportUsage=db.transaction((source,eventId,usage)=>{
   if(q.usageImport.get(source,eventId)) return {duplicate:true};
   q.addUsageImport.run(source,eventId);
@@ -146,4 +164,4 @@ const txPayment=db.transaction((p)=>{
   if(p.status==='paid'&&credits>0) q.addCredit.run(p.user_id,credits,'purchase','payment',String(info.lastInsertRowid),'Compra '+p.plan_code);
   return {duplicate:false,paymentId:Number(info.lastInsertRowid),credits};
 });
-module.exports={q,txCharge,txReserve,txSettle,txPayment,txImportUsage};
+module.exports={q,txCharge,txReserve,txSettle,txPayment,txImportUsage,txRefundStale};
