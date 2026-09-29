@@ -21,6 +21,7 @@ const webhookRoutes = require('./routes/webhooks');
 const internalRoutes = require('./routes/internal');
 const accountRoutes = require('./routes/account');
 const checkoutRoutes = require('./routes/checkout');
+const creatorRoutes = require('./routes/creator');
 const { requireAuth, redirectIfAuthenticated } = require('./lib/middleware');
 const recovery = require('./lib/recovery');
 
@@ -102,6 +103,7 @@ app.use('/api/webhooks', webhookRoutes);
 app.use('/api/internal', internalRoutes);
 app.use('/api/account', accountRoutes);
 app.use('/api/checkout', checkoutRoutes);
+app.use('/api/creator', creatorRoutes);
 
 app.get('/api/health', (req, res) => {
   let users = null;
@@ -140,6 +142,10 @@ for (const puerta of ['/login', '/v2/login']) {
 
 app.get('/studio', requireAuth, (req, res) => {
   res.sendFile(path.join(PUBLIC_DIR, 'studio.html'));
+});
+
+app.get('/create', requireAuth, (req, res) => {
+  res.sendFile(path.join(PUBLIC_DIR, 'create.html'));
 });
 
 app.get('/account', requireAuth, (req, res) => {
