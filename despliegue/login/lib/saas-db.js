@@ -28,10 +28,20 @@ CREATE TABLE IF NOT EXISTS credit_ledger (
   note TEXT, created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 CREATE INDEX IF NOT EXISTS idx_credit_user ON credit_ledger(user_id,id);
+CREATE TABLE IF NOT EXISTS payment_events (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  provider TEXT NOT NULL,
+  event_id TEXT NOT NULL,
+  event_type TEXT,
+  payload_hash TEXT,
+  processed_at TEXT NOT NULL DEFAULT (datetime('now')),
+  UNIQUE(provider,event_id)
+);
 CREATE TABLE IF NOT EXISTS payments (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
   provider TEXT NOT NULL, provider_ref TEXT,
+  plan_code TEXT, credits_granted INTEGER NOT NULL DEFAULT 0,
   amount_microusd INTEGER NOT NULL, fee_microusd INTEGER NOT NULL DEFAULT 0,
   currency TEXT NOT NULL DEFAULT 'USD', status TEXT NOT NULL,
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
@@ -79,6 +89,11 @@ const q = {
   reservationByKey: db.prepare('SELECT * FROM credit_reservations WHERE reservation_key=?'),
   addReservation: db.prepare('INSERT INTO credit_reservations(reservation_key,user_id,credits,project_id,operation) VALUES(?,?,?,?,?)'),
   settleReservation: db.prepare("UPDATE credit_reservations SET status=?,usage_id=?,settled_at=datetime('now') WHERE id=? AND status='reserved'"),
+  paymentEvent: db.prepare('SELECT * FROM payment_events WHERE provider=? AND event_id=?'),
+  addPaymentEvent: db.prepare('INSERT INTO payment_events(provider,event_id,event_type,payload_hash) VALUES(?,?,?,?)'),
+  paymentByRef: db.prepare('SELECT * FROM payments WHERE provider=? AND provider_ref=?'),
+  addPayment: db.prepare('INSERT INTO payments(user_id,provider,provider_ref,plan_code,credits_granted,amount_microusd,fee_microusd,currency,status) VALUES(?,?,?,?,?,?,?,?,?)'),
+  planByCode: db.prepare('SELECT * FROM plans WHERE code=? AND active=1'),
   audit: db.prepare('INSERT INTO admin_audit(actor_user_id,action,target_type,target_id,detail_json) VALUES(?,?,?,?,?)'),
 };
 const txCharge = db.transaction((userId, usage) => {
@@ -107,4 +122,14 @@ const txSettle=db.transaction((key,usage)=>{
   if(!ok) q.addCredit.run(r.user_id,r.credits,'refund','job',key,'Devolucion automatica por generacion fallida');
   return q.reservationByKey.get(key);
 });
-module.exports={q,txCharge,txReserve,txSettle};
+const txPayment=db.transaction((p)=>{
+  const seen=q.paymentEvent.get(p.provider,p.event_id); if(seen) return {duplicate:true};
+  q.addPaymentEvent.run(p.provider,p.event_id,p.event_type||null,p.payload_hash||null);
+  const old=q.paymentByRef.get(p.provider,p.provider_ref); if(old) return {duplicate:true,payment:old};
+  const plan=q.planByCode.get(p.plan_code); if(!plan) throw new Error('Plan desconocido');
+  const credits=Number(p.credits_granted||plan.credits);
+  const info=q.addPayment.run(p.user_id,p.provider,p.provider_ref,p.plan_code,credits,Number(p.amount_microusd),Number(p.fee_microusd||0),p.currency||'USD',p.status);
+  if(p.status==='paid'&&credits>0) q.addCredit.run(p.user_id,credits,'purchase','payment',String(info.lastInsertRowid),'Compra '+p.plan_code);
+  return {duplicate:false,paymentId:Number(info.lastInsertRowid),credits};
+});
+module.exports={q,txCharge,txReserve,txSettle,txPayment};
