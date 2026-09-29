@@ -17,6 +17,7 @@ const authRoutes = require('./routes/auth');
 const adminRoutes = require('./routes/admin');
 const billingRoutes = require('./routes/billing');
 const generationRoutes = require('./routes/generations');
+const webhookRoutes = require('./routes/webhooks');
 const { requireAuth, redirectIfAuthenticated } = require('./lib/middleware');
 
 const app = express();
@@ -93,6 +94,7 @@ app.use('/api', authRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/billing', billingRoutes);
 app.use('/api/generations', generationRoutes);
+app.use('/api/webhooks', webhookRoutes);
 
 app.get('/api/health', (req, res) => {
   let users = null;
