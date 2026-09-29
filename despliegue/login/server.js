@@ -131,6 +131,12 @@ app.get('/studio', requireAuth, (req, res) => {
   res.sendFile(path.join(PUBLIC_DIR, 'studio.html'));
 });
 
+app.get('/admin', requireAuth, (req, res) => {
+  const user = stmt.findById.get(req.session.userId);
+  if (!user || user.role !== 'admin') return res.status(403).send('Solo administradores.');
+  res.sendFile(path.join(PUBLIC_DIR, 'admin.html'));
+});
+
 // ---------------------------------------------------------------- errores
 app.use((req, res) => {
   if (req.path.startsWith('/api/')) {
